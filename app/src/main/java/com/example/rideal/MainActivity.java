@@ -9,6 +9,7 @@ import android.Manifest;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.os.Bundle;
+import android.widget.RelativeLayout;
 import android.widget.TextView;
 
 import com.uber.sdk.android.core.UberSdk;
@@ -16,11 +17,26 @@ import com.uber.sdk.android.core.auth.AccessTokenManager;
 import com.uber.sdk.android.core.auth.AuthenticationError;
 import com.uber.sdk.android.core.auth.LoginCallback;
 import com.uber.sdk.android.core.auth.LoginManager;
+import com.uber.sdk.android.rides.RideRequestButton;
 import com.uber.sdk.core.auth.AccessToken;
 import com.uber.sdk.core.auth.Scope;
+import com.uber.sdk.rides.client.Session;
 import com.uber.sdk.rides.client.SessionConfiguration;
+import com.uber.sdk.rides.client.UberRidesApi;
+import com.uber.sdk.rides.client.error.ApiError;
+import com.uber.sdk.rides.client.error.ErrorParser;
+import com.uber.sdk.rides.client.model.Product;
+import com.uber.sdk.rides.client.model.ProductsResponse;
+import com.uber.sdk.rides.client.model.RideEstimate;
+import com.uber.sdk.rides.client.model.RideRequestParameters;
+import com.uber.sdk.rides.client.model.UserProfile;
+import com.uber.sdk.rides.client.services.RidesService;
 
+import java.io.IOException;
 import java.util.Arrays;
+import java.util.List;
+
+import retrofit2.Response;
 
 public class MainActivity extends AppCompatActivity {
 
@@ -29,17 +45,14 @@ public class MainActivity extends AppCompatActivity {
         public void onLoginCancel() {
             // User canceled login
         }
-
         @Override
         public void onLoginError(@NonNull AuthenticationError error) {
             // Error occurred during login
         }
-
         @Override
         public void onLoginSuccess(@NonNull AccessToken accessToken) {
             // Successful login!  The AccessToken will have already been saved.
         }
-
         @Override
         public void onAuthorizationCodeReceived(@NonNull String authorizationCode) {
 
@@ -58,34 +71,53 @@ public class MainActivity extends AppCompatActivity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
-
         SessionConfiguration config = new SessionConfiguration.Builder()
-                // mandatory
                 .setClientId("_uWysVxxI1pPuuOsaQSJZbgdk4VAzAzK")
-                // required for enhanced button features
-                // .setServerToken("<TOKEN>")
-                // required for implicit grant authentication
-                //   .setRedirectUri("<REDIRECT_URI>")
-                // optional: set sandbox as operating environment
-                .setEnvironment(SessionConfiguration.Environment.SANDBOX)
-                .setScopes(Arrays.asList(Scope.PROFILE, Scope.REQUEST))
+                //.setServerToken("lVnrfjZENfFgaE9U2_I6YO85ss68_lvx973Oq2c5")
+                //.setRedirectUri("http://localhost")
+                //.setEnvironment(SessionConfiguration.Environment.SANDBOX)
+                //.setScopes(Arrays.asList(Scope.PROFILE, Scope.REQUEST))
+                .setScopes(Arrays.asList(Scope.RIDE_WIDGETS))
+                .setEnvironment(SessionConfiguration.Environment.PRODUCTION)
                 .build();
 
-
-
         UberSdk.initialize(config);
+
         TextView hio = (TextView) findViewById(R.id.hello);
         hio.setText("UBER LINKED YAAAAAAAA");
 
-        requestCheck();
-
+        requestPermission();
 
         accessTokenManager = new AccessTokenManager(this);
         loginManager = new LoginManager(accessTokenManager, loginCallback);
+        loginManager.setRedirectForAuthorizationCode(true);
         loginManager.login(this);
+
+        try {
+            Session session = loginManager.getSession();
+            RidesService service = UberRidesApi.with(session).build().createService();
+            Response<ProductsResponse> response = service.getProducts(37.79f, -122.39f).execute();
+            List<Product> products = (List<Product>) response.body();
+            String productId = products.get(0).getProductId();
+            RideRequestParameters rideRequestParameters = new RideRequestParameters.Builder().setPickupCoordinates(37.77f, -122.41f)
+                    .setProductId(productId)
+                    .setDropoffCoordinates(37.49f, -122.41f)
+                    .build();
+            RideEstimate rideEstimate = service.estimateRide(rideRequestParameters).execute().body();
+            int pickupEstimate = rideEstimate.getPickupEstimate();
+            RideEstimate.Trip trip = rideEstimate.getTrip();
+            float distEstimate = trip.getDistanceEstimate();
+            float durationEstimate = trip.getDurationEstimate();
+            RideEstimate.Price price = rideEstimate.getPrice();
+            String fareId = price.getFareId();
+
+            hio.setText("Fare: " + fareId);
+        } catch (IOException e){
+
+        }
     }
 
-    private void requestCheck(){
+    private void requestPermission(){
         if (ContextCompat.checkSelfPermission(this,
                 Manifest.permission.ACCESS_FINE_LOCATION)
                 != PackageManager.PERMISSION_GRANTED) {
@@ -109,13 +141,11 @@ public class MainActivity extends AppCompatActivity {
             }
         } else {
             // Permission has already been granted
-
         }
     }
 
     @Override
-    public void onRequestPermissionsResult(int requestCode,
-                                           String[] permissions, int[] grantResults) {
+    public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
         switch (requestCode) {
             case 1: {
                 // If request is cancelled, the result arrays are empty.
@@ -126,12 +156,10 @@ public class MainActivity extends AppCompatActivity {
                 } else {
                     // permission denied, boo! Disable the
                     // functionality that depends on this permission.
-
-                    requestCheck();
+                    requestPermission();
                 }
                 return;
             }
-
             // other 'case' lines to check for other
             // permissions this app might request.
         }
